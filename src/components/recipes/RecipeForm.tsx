@@ -159,6 +159,12 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
       setSaving(false);
       return;
     }
+    console.log('[RecipeForm.save] debug:', {
+      userId,
+      editRecipeId: editRecipe?.id,
+      editRecipeUserId: editRecipe?.user_id,
+      editRecipeVersion: editRecipe?.version,
+    });
 
     const cleanIngredients = ingredients
       .filter((i) => i.name.trim())
@@ -168,15 +174,16 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
       .filter((s) => s.description.trim())
       .map((s, i) => ({ order: i + 1, description: s.description.trim() }));
 
+    // 编辑时不带 user_id：不显式重写该列，PostgreSQL 不会触发 RLS WITH CHECK 对它的重新评估
     const basePayload = {
       name: name.trim(),
       image_data: imageData,
       ingredients: cleanIngredients,
       steps: cleanSteps,
-      user_id: userId,
       updated_at: new Date().toISOString(),
       version: (editRecipe?.version || 0) + 1,
     };
+    const insertPayload = { ...basePayload, user_id: userId };
 
     try {
       let saved: Recipe;
@@ -190,7 +197,7 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
       } else {
         const { data, error } = await supabase
           .from('recipes')
-          .insert(basePayload)
+          .insert(insertPayload)
           .select()
           .single();
         if (error) throw error;
@@ -203,7 +210,12 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
       onSaved();
       onClose();
     } catch (err: any) {
-      toast.error(err.message || '保存失败');
+      // 完整透出 Supabase 错误（含 PostgreSQL hint），方便定位是 400/42501 还是别的问题
+      console.error('[RecipeForm.save] error:', err);
+      const code = err?.code ? `[${err.code}] ` : '';
+      const hint = err?.hint ? `  hint: ${err.hint}` : '';
+      const details = err?.details ? `  details: ${err.details}` : '';
+      toast.error(`${code}${err?.message || '保存失败'}${hint}${details}`);
     } finally {
       setSaving(false);
     }
