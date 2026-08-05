@@ -11,6 +11,16 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import type { Countdown, CountdownMode, CountdownKind } from '@/types';
 
+/** 返回 YYYY-MM-DD 格式的昨天（用于「已过去」模式默认起点，避免默认今天算出 0 天） */
+function yesterdayISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ============ Props ============
 interface CountdownFormProps {
   open: boolean;
@@ -50,7 +60,9 @@ export function CountdownForm({ open, onClose, onSaved, editCountdown }: Countdo
     } else {
       setTitle('');
       setMode('since');
-      setTargetDate('');
+      // 「已过去」模式的默认起点改为昨天（兜底方案：避免默认今天算出 0 天）
+      // 用户仍需改成真实的纪念日当天，比如在一起那天、结婚那天
+      setTargetDate(yesterdayISO());
       setColor(null);
     }
     setErrors({});
@@ -168,6 +180,11 @@ export function CountdownForm({ open, onClose, onSaved, editCountdown }: Countdo
             {mode === 'until' && '显示距离目标日期还剩多少天'}
             {mode === 'birthday' && '按每年循环计算，距离下次生日还剩多少天（年份随意填）'}
           </p>
+          {mode === 'since' && (
+            <p className="text-xs text-accent-red mt-1 font-medium">
+              ⚠️ 请把日期改回你们在一起的那天（默认昨天只是兜底，真实日期要你自己填）
+            </p>
+          )}
         </div>
 
         {/* 日期 */}
