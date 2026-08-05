@@ -61,12 +61,13 @@ export default defineConfig({
             },
           },
           {
-            // Supabase Storage 图片：缓存优先
+            // Supabase Storage 图片：网络优先（避免 400/404 等错误响应被永久缓存导致老图永远加载不出来）
             urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/.*/i,
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-storage-cache',
               expiration: { maxEntries: 200, maxAgeSeconds: 2592000 },
+              networkTimeoutSeconds: 8,
             },
           },
           {

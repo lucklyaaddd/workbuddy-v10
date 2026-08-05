@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <!-- iOS PWA 配置 -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="WorkBuddy" />
@@ -16,11 +17,8 @@
     <!-- 主题色 -->
     <meta name="theme-color" content="#1A3C2A" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#FDF8EC" media="(prefers-color-scheme: light)" />
-    <!-- 安全策略 CSP -->
+    <!-- 安全策略 CSP：本地自托管字体，不依赖 Google Fonts（避免 CSP 阻挡 + 离线条加载失败） -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://api.day.app; connect-src 'self' https://*.supabase.co https://api.day.app; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
-    <!-- 像素字体 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
     <title>WorkBuddy 个人工作台</title>
     <!-- 启动页样式（PWA 加载时显示） -->
     <style>
