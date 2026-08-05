@@ -1,7 +1,8 @@
 /**
  * Bark 推送订阅管理接口
- * GET: 获取当前用户所有推送订阅（endpoint 脱敏展示）
- * DELETE: 删除指定推送订阅
+ * GET:                获取当前用户所有推送订阅（endpoint 脱敏展示）
+ * DELETE ?id=N:       删除指定推送订阅
+ * DELETE ?all=1:      删除当前用户全部订阅（合并自原 api/bark/unsubscribe.ts，signOut 时调用）
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyAuth, AuthError } from '../_lib/auth';
@@ -75,13 +76,47 @@ async function handleGet(req: VercelRequest, res: VercelResponse, userId: string
   }
 }
 
-// ============ DELETE 处理器：删除指定订阅 ============
-
+// ============ DELETE 处理器：删除指定订阅或全部订阅 ============
+//
+// 支持两种模式（合并了原 api/bark/unsubscribe.ts 的功能）：
+//   1. DELETE /api/bark/subscriptions?id=N    → 删除单个订阅
+//   2. DELETE /api/bark/subscriptions?all=1   → 删除当前用户全部订阅（登出清理用）
+//
 async function handleDelete(req: VercelRequest, res: VercelResponse, userId: string) {
   try {
     const supabase = getSupabaseAdmin();
+    const wantsAll = req.query.all === '1' || req.query.all === 'true';
 
-    // 获取订阅 ID（支持 URL 参数或查询参数）
+    // 模式 1: 批量删除当前用户所有订阅
+    if (wantsAll) {
+      const { count, error: countError } = await supabase
+        .from('push_subscriptions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+      if (countError) {
+        console.error('[Bark Subscriptions] 查询订阅数量失败:', countError.message);
+        return error(res, 500, '查询订阅记录失败');
+      }
+
+      if (!count || count === 0) {
+        return success(res, { deletedCount: 0 }, '没有需要清理的订阅');
+      }
+
+      const { error: deleteError } = await supabase
+        .from('push_subscriptions')
+        .delete()
+        .eq('user_id', userId);
+
+      if (deleteError) {
+        console.error('[Bark Subscriptions] 批量删除失败:', deleteError.message);
+        return error(res, 500, '清理订阅记录失败');
+      }
+
+      return success(res, { deletedCount: count }, `已清理 ${count} 个设备订阅`);
+    }
+
+    // 模式 2: 删除单个订阅
     const subscriptionId = parseInt(
       (req.query.id as string) || (req.body?.id as string) || '',
       10

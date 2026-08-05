@@ -245,12 +245,13 @@ export async function signOut() {
     console.warn('[Auth] 清理离线数据失败', e);
   }
   // 调用后端清理设备推送订阅
+  // 注意:已合并到 api/bark/subscriptions.ts,通过 ?all=1 触发批量删除
   try {
     const token = await getAccessToken();
     if (token) {
-      await fetch('/api/bark/unsubscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      await fetch('/api/bark/subscriptions?all=1', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
       });
     }
   } catch (e) {

@@ -77,38 +77,6 @@ export async function saveBarkSubscription(barkUrl: string, deviceName: string):
 }
 
 /**
- * 测试推送（带 30 秒冷却）
- * @param deviceName 设备名称
- * @returns 测试结果
- */
-export async function testBarkPush(deviceName?: string): Promise<{ success: boolean; error?: string }> {
-  const token = await getAccessToken();
-  if (!token) {
-    return { success: false, error: '未登录' };
-  }
-
-  try {
-    const resp = await fetch('/api/bark/test', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ deviceName }),
-    });
-
-    const result = await resp.json();
-    if (!resp.ok || !result.success) {
-      return { success: false, error: result.error || '测试失败' };
-    }
-
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message || '网络错误' };
-  }
-}
-
-/**
  * 获取已绑定的设备列表
  * @returns 设备列表（endpoint 已脱敏）
  */

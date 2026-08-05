@@ -1,11 +1,13 @@
 /**
  * Bark 推送配置组件
- * 功能：Bark URL 输入、设备名称、隐私告知、保存并测试、已绑定设备列表、推送总开关、删除设备、30秒冷却防频繁请求
+ * 功能：Bark URL 输入、设备名称、隐私告知、保存、已绑定设备列表、推送总开关、删除设备
+ * 注意:「测试推送」按钮已移除(后端 api/bark/test.ts endpoint 已合并删除,
+ *       节省 Vercel Hobby Serverless Function 配额)。如需验证推送,请绑定后等待真实提醒触发。
  */
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
 import { escapeHtml } from '@/lib/utils';
-import { saveBarkSubscription, testBarkPush, getSubscriptions, deleteSubscription } from '@/lib/bark';
+import { saveBarkSubscription, getSubscriptions, deleteSubscription } from '@/lib/bark';
 import { useToast } from '@/hooks/useToast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -30,8 +32,6 @@ export function BarkConfig() {
   const [deviceName, setDeviceName] = useState('');
   const [privacyChecked, setPrivacyChecked] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testCooldown, setTestCooldown] = useState(0);
   const [devices, setDevices] = useState<BoundDevice[]>([]);
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [pushEnabled, setPushEnabled] = useState(true);
@@ -69,13 +69,6 @@ export function BarkConfig() {
     loadPushEnabled();
   }, [loadDevices, loadPushEnabled]);
 
-  // ============ 测试推送冷却倒计时 ============
-  useEffect(() => {
-    if (testCooldown <= 0) return;
-    const timer = setTimeout(() => setTestCooldown((t) => t - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [testCooldown]);
-
   // ============ 保存绑定 ============
   const handleSave = async () => {
     if (!barkUrl.trim()) {
@@ -103,25 +96,6 @@ export function BarkConfig() {
       loadDevices();
     } else {
       toast.error(result.error || '绑定失败');
-    }
-  };
-
-  // ============ 测试推送 ============
-  const handleTest = async () => {
-    if (testCooldown > 0) {
-      toast.warning(`请等待 ${testCooldown} 秒后再试`);
-      return;
-    }
-
-    setTesting(true);
-    const result = await testBarkPush(deviceName || undefined);
-    setTesting(false);
-
-    if (result.success) {
-      toast.success('测试推送已发送');
-      setTestCooldown(30);
-    } else {
-      toast.error(result.error || '推送测试失败');
     }
   };
 
@@ -213,16 +187,6 @@ export function BarkConfig() {
               loading={saving}
             >
               保存
-            </Button>
-            <Button
-              variant="secondary"
-              size="md"
-              fullWidth
-              onClick={handleTest}
-              loading={testing}
-              disabled={testCooldown > 0}
-            >
-              {testCooldown > 0 ? `${testCooldown}s` : '测试推送'}
             </Button>
           </div>
         </div>
