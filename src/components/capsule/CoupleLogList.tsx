@@ -80,7 +80,7 @@ export function CoupleLogList() {
     }
 
     const currentOffset = reset ? 0 : offset;
-    const { data, error } = query.range(currentOffset, currentOffset + PAGE_SIZE - 1);
+    const { data, error } = await query.range(currentOffset, currentOffset + PAGE_SIZE - 1);
 
     if (error) {
       toast.error('加载失败');
