@@ -1,9 +1,11 @@
 /**
  * 记账列表组件
  * 功能：按日期分组展示、收入绿色/支出红色、显示分类图标金额备注、编辑删除、分页
+ * 本地优先：先用 IndexedDB 缓存秒开，再后台从 Supabase 刷新
  */
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
+import { createLocalStore } from '@/lib/localDb';
 import { escapeHtml, formatAmount, formatRelativeTime } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { Card } from '@/components/ui/Card';
@@ -23,6 +25,9 @@ const CATEGORY_ICONS: Record<string, string> = {
   '工资': '💼', '奖金': '🎁', '投资': '📈',
   '其他支出': '📦', '其他收入': '💰',
 };
+
+/** 缓存 */
+const txStore = createLocalStore<Transaction>('workbuddy-transactions');
 
 // ============ 类型定义 ============
 interface TransactionListProps {
@@ -44,55 +49,61 @@ interface DateGroup {
 export function TransactionList({ refreshKey, onEdit }: TransactionListProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
   const toast = useToast();
 
-  // ============ 数据加载 ============
+  // ============ 数据加载（本地优先） ============
 
-  /** 加载记录 */
-  const loadTransactions = useCallback(async (reset = false) => {
+  const loadTransactions = useCallback(async () => {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    setLoading(true);
-    const currentOffset = reset ? 0 : offset;
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_deleted', false)
-      .order('date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(currentOffset, currentOffset + PAGE_SIZE - 1);
-
-    if (error) {
-      toast.error('加载失败');
-      setLoading(false);
-      return;
+    // 1. 本地缓存秒开
+    try {
+      const cached = await txStore.getCached();
+      if (cached.length > 0) {
+        setTransactions(cached);
+        setLoading(false);
+      }
+    } catch {
+      /* 忽略 */
     }
 
-    const list = (data || []) as Transaction[];
-    if (reset) {
+    // 2. 后台刷新
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_deleted', false)
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const list = (data || []) as Transaction[];
       setTransactions(list);
-      setOffset(PAGE_SIZE);
-    } else {
-      setTransactions((prev) => [...prev, ...list]);
-      setOffset((prev) => prev + PAGE_SIZE);
+      await txStore.setCached(list);
+    } catch (e) {
+      console.error('[TransactionList] 加载失败:', e);
+      if (transactions.length === 0) toast.error('加载失败');
+    } finally {
+      setLoading(false);
     }
-    setHasMore(list.length === PAGE_SIZE);
-    setLoading(false);
-  }, [offset, toast]);
+  }, [toast, transactions.length]);
 
   useEffect(() => {
-    loadTransactions(true);
+    loadTransactions();
   }, [refreshKey]);
 
-  /** 加载更多 */
-  const loadMore = () => {
-    if (!loading && hasMore) loadTransactions();
-  };
+  /** 每次本地数据变化都回写缓存 */
+  useEffect(() => {
+    if (transactions.length > 0) txStore.setCached(transactions);
+  }, [transactions]);
+
+  /** 加载更多（前端切片） */
+  const loadMore = () => setVisibleCount((c) => c + PAGE_SIZE);
 
   // ============ 删除 ============
 
@@ -116,22 +127,24 @@ export function TransactionList({ refreshKey, onEdit }: TransactionListProps) {
   // ============ 按日期分组 ============
 
   /** 按日期分组，并计算每组合计数 */
-  const groupedByDate = (): DateGroup[] => {
+  const groupedByDate = (items: Transaction[]): DateGroup[] => {
     const groups: Record<string, Transaction[]> = {};
-    transactions.forEach((t) => {
+    items.forEach((t) => {
       if (!groups[t.date]) groups[t.date] = [];
       groups[t.date].push(t);
     });
 
-    return Object.entries(groups).map(([date, items]) => ({
+    return Object.entries(groups).map(([date, its]) => ({
       date,
-      items,
-      totalIncome: items.filter((i) => i.type === 'income').reduce((s, i) => s + i.amount, 0),
-      totalExpense: items.filter((i) => i.type === 'expense').reduce((s, i) => s + i.amount, 0),
+      items: its,
+      totalIncome: its.filter((i) => i.type === 'income').reduce((s, i) => s + i.amount, 0),
+      totalExpense: its.filter((i) => i.type === 'expense').reduce((s, i) => s + i.amount, 0),
     }));
   };
 
-  const groups = groupedByDate();
+  const pageItems = transactions.slice(0, visibleCount);
+  const groups = groupedByDate(pageItems);
+  const hasMore = transactions.length > visibleCount;
 
   // ============ 渲染 ============
   if (loading && transactions.length === 0) {
@@ -233,10 +246,9 @@ export function TransactionList({ refreshKey, onEdit }: TransactionListProps) {
         <div className="text-center pt-2">
           <button
             onClick={loadMore}
-            disabled={loading}
             className="text-xs text-forest hover:text-forest/70 transition-colors"
           >
-            {loading ? '加载中...' : '加载更多'}
+            加载更多
           </button>
         </div>
       )}

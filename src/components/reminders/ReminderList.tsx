@@ -1,9 +1,11 @@
 /**
  * 提醒列表组件
  * 功能：三个分区（待处理/即将到来/历史）、类型图标、日期倒计时、农历标记、周期展示、编辑删除、分页
+ * 本地优先：先用 IndexedDB 缓存秒开，再后台从 Supabase 刷新
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
+import { createLocalStore } from '@/lib/localDb';
 import { escapeHtml, solarToLunar } from '@/lib/utils';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
@@ -22,6 +24,9 @@ const TYPE_ICONS: Record<string, string> = {
   custom: '🔔',
 };
 
+/** 缓存 */
+const reminderStore = createLocalStore<Reminder>('workbuddy-reminders');
+
 /**
  * 提醒列表组件
  */
@@ -34,52 +39,59 @@ export function ReminderList({
 }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deleteTarget, setDeleteTarget] = useState<Reminder | null>(null);
   const toast = useToast();
 
-  // ============ 数据加载 ============
+  // ============ 数据加载（本地优先） ============
 
-  const loadReminders = useCallback(async (reset = false) => {
+  const loadReminders = useCallback(async () => {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    setLoading(true);
-    const currentOffset = reset ? 0 : offset;
-    const { data, error } = await supabase
-      .from('reminders')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_deleted', false)
-      .order('date', { ascending: true })
-      .range(currentOffset, currentOffset + PAGE_SIZE - 1);
-
-    if (error) {
-      toast.error('加载失败');
-      setLoading(false);
-      return;
+    // 1. 本地缓存秒开
+    try {
+      const cached = await reminderStore.getCached();
+      if (cached.length > 0) {
+        setReminders(cached);
+        setLoading(false);
+      }
+    } catch {
+      /* 忽略 */
     }
 
-    const list = (data || []) as Reminder[];
-    if (reset) {
+    // 2. 后台刷新
+    try {
+      const { data, error } = await supabase
+        .from('reminders')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_deleted', false)
+        .order('date', { ascending: true });
+
+      if (error) throw error;
+
+      const list = (data || []) as Reminder[];
       setReminders(list);
-      setOffset(PAGE_SIZE);
-    } else {
-      setReminders((prev) => [...prev, ...list]);
-      setOffset((prev) => prev + PAGE_SIZE);
+      await reminderStore.setCached(list);
+    } catch (e) {
+      console.error('[ReminderList] 加载失败:', e);
+      if (reminders.length === 0) toast.error('加载失败');
+    } finally {
+      setLoading(false);
     }
-    setHasMore(list.length === PAGE_SIZE);
-    setLoading(false);
-  }, [offset, toast]);
+  }, [toast, reminders.length]);
 
   useEffect(() => {
-    loadReminders(true);
+    loadReminders();
   }, [refreshKey]);
 
-  const loadMore = () => {
-    if (!loading && hasMore) loadReminders();
-  };
+  /** 每次本地数据变化都回写缓存 */
+  useEffect(() => {
+    if (reminders.length > 0) reminderStore.setCached(reminders);
+  }, [reminders]);
+
+  const loadMore = () => setVisibleCount((c) => c + PAGE_SIZE);
 
   // ============ 删除 ============
   const handleDelete = async () => {
@@ -109,21 +121,21 @@ export function ReminderList({
     return differenceInDays(target, new Date(todayStr));
   };
 
-  // 按状态分区
+  // 仅对当前分页窗口内的数据做分区
+  const pageItems = reminders.slice(0, visibleCount);
+  const hasMore = reminders.length > visibleCount;
+
   const { pending, upcoming, history } = useMemo(() => {
     const p: Reminder[] = [];
     const u: Reminder[] = [];
     const h: Reminder[] = [];
 
-    reminders.forEach((r) => {
+    pageItems.forEach((r) => {
       const days = getDaysUntil(r.date);
       if (r.status === 0) {
-        // 未处理的提醒
         if (days < 0) {
-          // 过期
           h.push(r);
         } else if (days <= 3) {
-          // 3天内 = 即将到来
           u.push(r);
         } else {
           p.push(r);
@@ -134,7 +146,7 @@ export function ReminderList({
     });
 
     return { pending: p, upcoming: u, history: h };
-  }, [reminders]);
+  }, [pageItems, todayStr]);
 
   // ============ 渲染单条提醒 ============
   const renderReminder = (reminder: Reminder) => {
@@ -273,10 +285,9 @@ export function ReminderList({
         <div className="text-center pt-2">
           <button
             onClick={loadMore}
-            disabled={loading}
             className="text-xs text-forest hover:text-forest/70 transition-colors"
           >
-            {loading ? '加载中...' : '加载更多'}
+            加载更多
           </button>
         </div>
       )}

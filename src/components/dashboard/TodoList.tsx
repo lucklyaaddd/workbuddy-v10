@@ -2,9 +2,11 @@
  * 待办列表组件
  * 功能：加载当天待办、展示列表、状态切换、软删除、饼图统计
  * 响应式：移动端饼图在上列表在下，PC 端左右布局
+ * 本地优先：先用 IndexedDB 缓存秒开，再后台从 Supabase 刷新
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
+import { createLocalStore } from '@/lib/localDb';
 import { escapeHtml, today } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { Card } from '@/components/ui/Card';
@@ -33,65 +35,81 @@ const STATUS_LABELS: Record<number, string> = {
   [TodoStatus.TIMEOUT]: '超时',
 };
 
+/** 本地缓存 */
+const todoStore = createLocalStore<Todo>('workbuddy-todos');
+
 /**
  * 待办列表组件
  */
 export function TodoList() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deleteTarget, setDeleteTarget] = useState<Todo | null>(null);
   // 饼图筛选联动：null=全部，否则按分类筛选
   const [pieFilter, setPieFilter] = useState<string | null>(null);
   const toast = useToast();
+  // 是否已向用户展示过数据（用于避免在「已有缓存」时误报网络错误）
+  const shownRef = useRef(false);
 
-  // ============ 数据加载 ============
+  // ============ 数据加载（本地优先） ============
 
-  /** 加载当天待办 */
-  const loadTodos = useCallback(async (reset = false) => {
+  /** 加载当天待办：先用缓存秒开，再后台刷新 */
+  const loadTodos = useCallback(async () => {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    setLoading(true);
-    const currentOffset = reset ? 0 : offset;
-    const query = supabase
-      .from('todos')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('scheduled_date', today())
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: true })
-      .range(currentOffset, currentOffset + PAGE_SIZE - 1);
+    // 1. 本地缓存秒开
+    try {
+      const cached = (await todoStore.getCached()).filter(
+        (t) => t.scheduled_date === today()
+      );
+      if (cached.length > 0) {
+        setTodos(cached);
+        shownRef.current = true;
+        setLoading(false);
+      }
+    } catch {
+      /* 忽略缓存读取失败 */
+    }
 
-    const { data, error } = await query;
+    // 2. 后台从 Supabase 刷新
+    try {
+      const { data, error } = await supabase
+        .from('todos')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true });
 
-    if (error) {
-      toast.error('加载待办失败');
+      if (error) throw error;
+
+      const all = (data || []) as Todo[];
+      const todayList = all.filter((t) => t.scheduled_date === today());
+      setTodos(todayList);
+      await todoStore.setCached(todayList);
+      shownRef.current = true;
+    } catch (e) {
+      console.error('[TodoList] 加载失败:', e);
+      if (!shownRef.current) toast.error('加载待办失败');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const list = (data || []) as Todo[];
-    if (reset) {
-      setTodos(list);
-      setOffset(PAGE_SIZE);
-    } else {
-      setTodos((prev) => [...prev, ...list]);
-      setOffset((prev) => prev + PAGE_SIZE);
-    }
-    setHasMore(list.length === PAGE_SIZE);
-    setLoading(false);
-  }, [offset, toast]);
+  }, [toast]);
 
   useEffect(() => {
-    loadTodos(true);
+    loadTodos();
+    // 仅挂载时加载一次；筛选/翻转都在前端完成
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** 加载更多 */
-  const loadMore = () => {
-    if (!loading && hasMore) loadTodos();
-  };
+  /** 每次本地数据变化都回写缓存，保证离线兜底始终最新 */
+  useEffect(() => {
+    if (todos.length > 0) todoStore.setCached(todos);
+  }, [todos]);
+
+  /** 加载更多（前端切片） */
+  const loadMore = () => setVisibleCount((c) => c + PAGE_SIZE);
 
   // ============ 操作 ============
 
@@ -157,6 +175,10 @@ export function TodoList() {
       setPieFilter(pieFilter === entry.name ? null : entry.name);
     }
   };
+
+  /** 当前显示的（已筛选 + 分页切片） */
+  const visibleTodos = filteredTodos.slice(0, visibleCount);
+  const hasMore = filteredTodos.length > visibleCount;
 
   // ============ 状态样式 ============
 
@@ -264,7 +286,7 @@ export function TodoList() {
             />
           ) : (
             <div className="space-y-2">
-              {filteredTodos.map((todo) => (
+              {visibleTodos.map((todo) => (
                 <div
                   key={todo.id}
                   className={[
@@ -318,10 +340,9 @@ export function TodoList() {
                 <div className="text-center pt-2">
                   <button
                     onClick={loadMore}
-                    disabled={loading}
                     className="text-xs text-forest hover:text-forest/70 transition-colors"
                   >
-                    {loading ? '加载中...' : '加载更多'}
+                    加载更多
                   </button>
                 </div>
               )}

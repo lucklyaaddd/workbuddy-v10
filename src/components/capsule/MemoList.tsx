@@ -2,9 +2,11 @@
  * 备忘录列表组件
  * 绿色系主题
  * 功能：五大分类筛选、置顶优先、标签展示、搜索、分页
+ * 本地优先：先用 IndexedDB 缓存秒开，再后台从 Supabase 刷新
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
+import { createLocalStore } from '@/lib/localDb';
 import { escapeHtml } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { Card } from '@/components/ui/Card';
@@ -37,14 +39,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   '其他': 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
+/** 缓存 */
+const memoStore = createLocalStore<Memo>('workbuddy-memos');
+
 /**
  * 备忘录列表组件
  */
 export function MemoList() {
   const [memos, setMemos] = useState<Memo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [category, setCategory] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -57,56 +61,78 @@ export function MemoList() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // ============ 数据加载 ============
+  // ============ 数据加载（本地优先） ============
 
-  const loadMemos = useCallback(async (reset = false) => {
+  const loadMemos = useCallback(async () => {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    setLoading(true);
-    let query = supabase
-      .from('memos')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_deleted', false)
-      .order('is_pinned', { ascending: false })
-      .order('updated_at', { ascending: false });
-
-    if (category) {
-      query = query.eq('category', category);
-    }
-    if (debouncedSearch) {
-      query = query.or(`title.ilike.%${debouncedSearch}%,content.ilike.%${debouncedSearch}%,tags.cs.{${debouncedSearch}}`);
+    // 1. 本地缓存秒开
+    try {
+      const cached = await memoStore.getCached();
+      if (cached.length > 0) {
+        setMemos(cached);
+        setLoading(false);
+      }
+    } catch {
+      /* 忽略 */
     }
 
-    const currentOffset = reset ? 0 : offset;
-    const { data, error } = await query.range(currentOffset, currentOffset + PAGE_SIZE - 1);
+    // 2. 后台刷新（一次性取回全部，排序/筛选/分页均在前端完成）
+    try {
+      const { data, error } = await supabase
+        .from('memos')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_deleted', false)
+        .order('is_pinned', { ascending: false })
+        .order('updated_at', { ascending: false });
 
-    if (error) {
-      toast.error('加载失败');
-      setLoading(false);
-      return;
-    }
+      if (error) throw error;
 
-    const list = (data || []) as Memo[];
-    if (reset) {
+      const list = (data || []) as Memo[];
       setMemos(list);
-      setOffset(PAGE_SIZE);
-    } else {
-      setMemos((prev) => [...prev, ...list]);
-      setOffset((prev) => prev + PAGE_SIZE);
+      await memoStore.setCached(list);
+    } catch (e) {
+      console.error('[MemoList] 加载失败:', e);
+      if (memos.length === 0) toast.error('加载失败');
+    } finally {
+      setLoading(false);
     }
-    setHasMore(list.length === PAGE_SIZE);
-    setLoading(false);
-  }, [offset, category, debouncedSearch, toast]);
+  }, [toast, memos.length]);
 
   useEffect(() => {
-    loadMemos(true);
-  }, [category, debouncedSearch]);
+    loadMemos();
+    // 仅挂载加载一次；分类/搜索均为前端筛选
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const loadMore = () => {
-    if (!loading && hasMore) loadMemos();
-  };
+  /** 每次本地数据变化都回写缓存 */
+  useEffect(() => {
+    if (memos.length > 0) memoStore.setCached(memos);
+  }, [memos]);
+
+  /** 加载更多（前端切片） */
+  const loadMore = () => setVisibleCount((c) => c + PAGE_SIZE);
+
+  // ============ 前端筛选 ============
+  const filtered = useMemo(() => {
+    const kw = debouncedSearch.trim().toLowerCase();
+    return memos.filter((m) => {
+      if (category && m.category !== category) return false;
+      if (kw) {
+        const hit =
+          (m.title || '').toLowerCase().includes(kw) ||
+          (m.content || '').toLowerCase().includes(kw) ||
+          (m.tags || []).some((t) => t.toLowerCase().includes(kw));
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [memos, category, debouncedSearch]);
+
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = filtered.length > visibleCount;
 
   // ============ 操作 ============
 
@@ -180,7 +206,7 @@ export function MemoList() {
       {/* 备忘录卡片网格 */}
       {loading && memos.length === 0 ? (
         <Loading text="加载备忘录..." />
-      ) : memos.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon="✏️"
           message="还没有备忘录，记下第一个灵感吧 ✏️"
@@ -189,7 +215,7 @@ export function MemoList() {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {memos.map((memo) => (
+            {visible.map((memo) => (
               <Card
                 key={memo.id}
                 padding="md"
@@ -279,10 +305,9 @@ export function MemoList() {
             <div className="text-center pt-2">
               <button
                 onClick={loadMore}
-                disabled={loading}
                 className="text-xs text-forest hover:text-forest/70 transition-colors"
               >
-                {loading ? '加载中...' : '加载更多'}
+                加载更多
               </button>
             </div>
           )}

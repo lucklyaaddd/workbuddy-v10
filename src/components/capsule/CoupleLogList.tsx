@@ -2,9 +2,11 @@
  * 情侣日志列表组件
  * 红粉色调主题
  * 功能：卡片展示、心情标签筛选、日历视图、收藏切换、图片九宫格预览、在一起天数、纪念日倒计时
+ * 本地优先：先用 IndexedDB 缓存秒开，再后台从 Supabase 刷新
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
+import { createLocalStore } from '@/lib/localDb';
 import { escapeHtml, formatRelativeTime } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { Card } from '@/components/ui/Card';
@@ -40,14 +42,16 @@ const MOOD_COLORS: Record<string, string> = {
   '期待': 'bg-fuchsia-100 text-fuchsia-600 border-fuchsia-200',
 };
 
+/** 缓存 */
+const logStore = createLocalStore<CoupleLog>('workbuddy-couple-logs');
+
 /**
  * 情侣日志列表组件
  */
 export function CoupleLogList() {
   const [logs, setLogs] = useState<CoupleLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [moodFilter, setMoodFilter] = useState('');
   const [starredOnly, setStarredOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CoupleLog | null>(null);
@@ -57,73 +61,87 @@ export function CoupleLogList() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const toast = useToast();
 
-  // ============ 数据加载 ============
+  // ============ 数据加载（本地优先） ============
 
-  const loadLogs = useCallback(async (reset = false) => {
+  const loadLogs = useCallback(async () => {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    setLoading(true);
-    let query = supabase
-      .from('couple_logs')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_deleted', false)
-      .order('log_date', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    if (moodFilter) {
-      query = query.eq('mood', moodFilter);
-    }
-    if (starredOnly) {
-      query = query.eq('is_starred', true);
+    // 1. 本地缓存秒开
+    try {
+      const cached = await logStore.getCached();
+      if (cached.length > 0) {
+        setLogs(cached);
+        setLoading(false);
+      }
+    } catch {
+      /* 忽略 */
     }
 
-    const currentOffset = reset ? 0 : offset;
-    const { data, error } = await query.range(currentOffset, currentOffset + PAGE_SIZE - 1);
+    // 2. 后台刷新（一次性取回全部，排序/筛选/分页均在前端完成）
+    try {
+      const { data, error } = await supabase
+        .from('couple_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_deleted', false)
+        .order('log_date', { ascending: false })
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      toast.error('加载失败');
-      setLoading(false);
-      return;
-    }
+      if (error) throw error;
 
-    const list = (data || []) as CoupleLog[];
-    if (reset) {
+      const list = (data || []) as CoupleLog[];
       setLogs(list);
-      setOffset(PAGE_SIZE);
-    } else {
-      setLogs((prev) => [...prev, ...list]);
-      setOffset((prev) => prev + PAGE_SIZE);
+      await logStore.setCached(list);
+    } catch (e) {
+      console.error('[CoupleLogList] 加载失败:', e);
+      if (logs.length === 0) toast.error('加载失败');
+    } finally {
+      setLoading(false);
     }
-    setHasMore(list.length === PAGE_SIZE);
-    setLoading(false);
-  }, [offset, moodFilter, starredOnly, toast]);
+  }, [toast, logs.length]);
 
   useEffect(() => {
-    loadLogs(true);
-  }, [moodFilter, starredOnly]);
+    loadLogs();
+    // 仅挂载加载一次；心情/收藏均为前端筛选
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const loadMore = () => {
-    if (!loading && hasMore) loadLogs();
-  };
+  /** 每次本地数据变化都回写缓存 */
+  useEffect(() => {
+    if (logs.length > 0) logStore.setCached(logs);
+  }, [logs]);
+
+  const loadMore = () => setVisibleCount((c) => c + PAGE_SIZE);
+
+  // ============ 前端筛选 ============
+  const filtered = useMemo(() => {
+    return logs.filter((l) => {
+      if (moodFilter && l.mood !== moodFilter) return false;
+      if (starredOnly && !l.is_starred) return false;
+      return true;
+    });
+  }, [logs, moodFilter, starredOnly]);
+
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = filtered.length > visibleCount;
 
   // ============ 在一起天数 ============
 
   const togetherDays = useMemo(() => {
-    if (logs.length === 0) return null;
+    if (filtered.length === 0) return null;
     // 从最早的日志日期开始计算
-    const dates = logs.map((l) => new Date(l.log_date).getTime());
+    const dates = filtered.map((l) => new Date(l.log_date).getTime());
     const earliest = Math.min(...dates);
     const now = Date.now();
     return Math.floor((now - earliest) / (1000 * 60 * 60 * 24));
-  }, [logs]);
+  }, [filtered]);
 
   // ============ 日历标记日期 ============
 
   const markedDates = useMemo(() => {
-    return new Set(logs.map((l) => l.log_date));
-  }, [logs]);
+    return new Set(filtered.map((l) => l.log_date));
+  }, [filtered]);
 
   // ============ 操作 ============
 
@@ -223,7 +241,7 @@ export function CoupleLogList() {
       </div>
 
       {/* 日志卡片网格 */}
-      {logs.length === 0 ? (
+      {filtered.length === 0 ? (
         <EmptyState
           icon="💞"
           message="还没有记录，写下属于你们的第一个回忆吧 💞"
@@ -231,7 +249,7 @@ export function CoupleLogList() {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {logs.map((log) => (
+            {visible.map((log) => (
               <Card
                 key={log.id}
                 padding="md"
@@ -308,10 +326,9 @@ export function CoupleLogList() {
             <div className="text-center pt-2">
               <button
                 onClick={loadMore}
-                disabled={loading}
                 className="text-xs text-red-400 hover:text-red-500 transition-colors"
               >
-                {loading ? '加载中...' : '加载更多回忆'}
+                加载更多回忆
               </button>
             </div>
           )}

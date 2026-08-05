@@ -1,9 +1,11 @@
 /**
  * 好词好句列表组件
  * 功能：卡片展示、分类筛选、全文搜索、一键导出 TXT、分页
+ * 本地优先：先用 IndexedDB 缓存秒开，再后台从 Supabase 刷新
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
+import { createLocalStore } from '@/lib/localDb';
 import { escapeHtml } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { Card } from '@/components/ui/Card';
@@ -35,14 +37,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   '生活': 'bg-forest-light/10 text-forest-light border-forest-light/20',
 };
 
+/** 缓存 */
+const quoteStore = createLocalStore<Quote>('workbuddy-quotes');
+
 /**
  * 好词好句列表组件
  */
 export function QuoteList() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [category, setCategory] = useState<QuoteCategory | ''>('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -56,60 +60,71 @@ export function QuoteList() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // ============ 数据加载 ============
+  // ============ 数据加载（本地优先） ============
 
-  /** 加载好词好句列表 */
-  const loadQuotes = useCallback(async (reset = false) => {
+  const loadQuotes = useCallback(async () => {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
-    setLoading(true);
-    let query = supabase
-      .from('quotes')
-      .select('*', { count: 'exact' })
-      .eq('user_id', userId)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false });
-
-    // 分类筛选
-    if (category) {
-      query = query.eq('category', category);
+    // 1. 本地缓存秒开
+    try {
+      const cached = await quoteStore.getCached();
+      if (cached.length > 0) {
+        setQuotes(cached);
+        setLoading(false);
+      }
+    } catch {
+      /* 忽略 */
     }
 
-    // 全文搜索
-    if (debouncedSearch) {
-      query = query.or(`content.ilike.%${debouncedSearch}%,author.ilike.%${debouncedSearch}%`);
-    }
+    // 2. 后台刷新（一次性取回全部，筛选在前端完成）
+    try {
+      const { data, error } = await supabase
+        .from('quotes')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false });
 
-    const currentOffset = reset ? 0 : offset;
-    const { data, error } = await query.range(currentOffset, currentOffset + PAGE_SIZE - 1);
+      if (error) throw error;
 
-    if (error) {
-      toast.error('加载失败');
-      setLoading(false);
-      return;
-    }
-
-    const list = (data || []) as Quote[];
-    if (reset) {
+      const list = (data || []) as Quote[];
       setQuotes(list);
-      setOffset(PAGE_SIZE);
-    } else {
-      setQuotes((prev) => [...prev, ...list]);
-      setOffset((prev) => prev + PAGE_SIZE);
+      await quoteStore.setCached(list);
+    } catch (e) {
+      console.error('[QuoteList] 加载失败:', e);
+      if (quotes.length === 0) toast.error('加载失败');
+    } finally {
+      setLoading(false);
     }
-    setHasMore(list.length === PAGE_SIZE);
-    setLoading(false);
-  }, [offset, category, debouncedSearch, toast]);
+  }, [toast, quotes.length]);
 
   useEffect(() => {
-    loadQuotes(true);
-  }, [category, debouncedSearch]);
+    loadQuotes();
+    // 仅挂载加载一次；分类/搜索均为前端筛选
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  /** 加载更多 */
-  const loadMore = () => {
-    if (!loading && hasMore) loadQuotes();
-  };
+  /** 加载更多（前端切片） */
+  const loadMore = () => setVisibleCount((c) => c + PAGE_SIZE);
+
+  // ============ 前端筛选 ============
+  const filtered = useMemo(() => {
+    const kw = debouncedSearch.trim().toLowerCase();
+    return quotes.filter((q) => {
+      if (category && q.category !== category) return false;
+      if (kw) {
+        const hit =
+          (q.content || '').toLowerCase().includes(kw) ||
+          (q.author || '').toLowerCase().includes(kw);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [quotes, category, debouncedSearch]);
+
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = filtered.length > visibleCount;
 
   // ============ 导出 TXT ============
 
@@ -177,7 +192,7 @@ export function QuoteList() {
       {/* 内容区域 */}
       {loading && quotes.length === 0 ? (
         <Loading text="加载好词好句中..." />
-      ) : quotes.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon="📖"
           message="还没收藏任何句子，去发现打动人心的文字吧 📖"
@@ -187,7 +202,7 @@ export function QuoteList() {
         <>
           {/* 卡片网格：响应式 1/2/3 列 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {quotes.map((quote) => (
+            {visible.map((quote) => (
               <Card key={quote.id} padding="md" className="flex flex-col">
                 {/* 分类标签 */}
                 {quote.category && (
@@ -228,10 +243,9 @@ export function QuoteList() {
             <div className="text-center pt-2">
               <button
                 onClick={loadMore}
-                disabled={loading}
                 className="text-xs text-forest hover:text-forest/70 transition-colors"
               >
-                {loading ? '加载中...' : '加载更多'}
+                加载更多
               </button>
             </div>
           )}
