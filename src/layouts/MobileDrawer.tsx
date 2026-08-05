@@ -11,6 +11,7 @@ import {
   PixelHeart,
   PixelClock,
   PixelGear,
+  PixelRecipe,
 } from '@/components/pixel/PixelIcons';
 import { DottedPattern, PixelGrass, PixelDogLine, LeafTexture } from '@/components/pixel/Decorations';
 
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { to: '/wealth', label: '财富工坊', icon: PixelCoin },
   { to: '/capsule', label: '时光胶囊', icon: PixelHeart },
   { to: '/reminders', label: '智能提醒中心', icon: PixelClock },
+  { to: '/recipes', label: '私厨菜谱', icon: PixelRecipe },
   { to: '/settings', label: '设置', icon: PixelGear },
 ];
 

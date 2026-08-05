@@ -99,6 +99,27 @@ export interface Quote extends BaseEntity {
   source: string;          // 来源
 }
 
+// ============ 私厨菜谱表 recipes ============
+/** 食材条目 */
+export interface Ingredient {
+  name: string;        // 食材名称
+  amount: string;      // 用量（如 "2个"、"一勺"）
+}
+
+/** 制作步骤 */
+export interface RecipeStep {
+  order: number;       // 步骤顺序（从 1 开始）
+  description: string; // 步骤描述
+}
+
+/** 菜谱记录 */
+export interface Recipe extends BaseEntity {
+  name: string;              // 菜品名称
+  image_data: string | null;// 菜品图片（base64 dataURL，压缩后）
+  ingredients: Ingredient[]; // 食材清单
+  steps: RecipeStep[];       // 制作步骤（数组顺序即步骤顺序）
+}
+
 // ============ 推送订阅表 push_subscriptions ============
 /** 推送类型 */
 export type PushType = 'bark' | 'web_push';

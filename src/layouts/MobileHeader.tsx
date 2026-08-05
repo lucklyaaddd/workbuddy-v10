@@ -14,6 +14,7 @@ const routeNames: Record<string, string> = {
   '/capsule/couple-logs': '情侣日志',
   '/capsule/memos': '备忘录',
   '/reminders': '智能提醒中心',
+  '/recipes': '私厨菜谱',
   '/settings': '设置',
 };
 

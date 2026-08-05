@@ -286,3 +286,26 @@ export function PixelClock({ size = DEFAULT_SIZE, color = '#5A7A4A', className =
     </svg>
   );
 }
+
+/**
+ * 像素碗盛菜（私厨菜谱）
+ */
+export function PixelRecipe({ size = DEFAULT_SIZE, color = '#C4A882', className = '', style }: PixelIconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className={className} style={style} xmlns="http://www.w3.org/2000/svg" shapeRendering="crispEdges">
+      {/* 蒸汽 */}
+      <rect x="6" y="2" width="1" height="2" fill="#FDF8EC" />
+      <rect x="9" y="1" width="1" height="2" fill="#FDF8EC" />
+      {/* 碗里的菜（绿/红/橙） */}
+      <rect x="5" y="7" width="2" height="2" fill="#7DBF8A" />
+      <rect x="8" y="6" width="2" height="2" fill="#D64550" />
+      <rect x="10" y="8" width="2" height="1" fill="#E8A87C" />
+      {/* 碗主体 */}
+      <rect x="3" y="9" width="10" height="1" fill={color} />
+      <rect x="2" y="10" width="12" height="3" fill={color} />
+      <rect x="2" y="10" width="1" height="3" fill="#9B7D5A" />
+      <rect x="13" y="10" width="1" height="3" fill="#9B7D5A" />
+      <rect x="3" y="13" width="10" height="1" fill="#9B7D5A" />
+    </svg>
+  );
+}

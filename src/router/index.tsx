@@ -16,6 +16,7 @@ const Wealth = lazy(() => import('@/pages/Wealth'));
 const TimeCapsule = lazy(() => import('@/pages/TimeCapsule'));
 const Reminders = lazy(() => import('@/pages/Reminders'));
 const Settings = lazy(() => import('@/pages/Settings'));
+const Recipes = lazy(() => import('@/pages/Recipes'));
 
 // ============ 懒加载包裹组件 ============
 /**
@@ -113,6 +114,15 @@ const router = createBrowserRouter([
         element: (
           <LazyLoad>
             <Reminders />
+          </LazyLoad>
+        ),
+      },
+      // 私厨菜谱
+      {
+        path: 'recipes',
+        element: (
+          <LazyLoad>
+            <Recipes />
           </LazyLoad>
         ),
       },
