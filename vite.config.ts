@@ -15,7 +15,10 @@ export default defineConfig({
     barkDevApiPlugin(),
     // PWA 配置：Service Worker 自动生成，离线缓存策略
     VitePWA({
-      registerType: 'prompt', // 新版本弹出提示让用户确认刷新
+      // autoUpdate：新 SW install 后自动 skipWaiting + clientsClaim
+      // 立即激活并接管已有页面，避免旧 SW 一直控制旧 chunks、新代码不生效
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
       includeAssets: ['icons/*.png', 'icons/*.svg'],
       manifest: {
         name: 'WorkBuddy 个人工作台',
@@ -40,6 +43,11 @@ export default defineConfig({
       workbox: {
         // 预缓存清单
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // 立即激活、立即接管：避免旧 SW 卡住页面
+        skipWaiting: true,
+        clientsClaim: true,
+        // 新 SW 激活时清理已不在新 precache 清单里的旧 cache，避免老 chunks 残留
+        cleanupOutdatedCaches: true,
         // 运行时缓存策略
         runtimeCaching: [
           {
