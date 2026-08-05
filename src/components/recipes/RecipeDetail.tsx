@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { deleteCachedRecipe } from '@/lib/recipeCache';
+import { deleteRecipeImage } from '@/lib/recipeStorage';
 import { useToast } from '@/hooks/useToast';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -44,6 +45,13 @@ export function RecipeDetail({ recipe, onClose, onEdit, onDeleted }: RecipeDetai
 
       // 同步清理本地缓存
       await deleteCachedRecipe(recipe.id);
+
+      // 清理 Storage 里的图片，避免孤儿文件堆积（软删除后无人再引用）
+      try {
+        await deleteRecipeImage(recipe.image_data);
+      } catch {
+        /* 忽略 */
+      }
 
       toast.success('已删除');
       setConfirmOpen(false);

@@ -115,7 +115,7 @@ export interface RecipeStep {
 /** 菜谱记录 */
 export interface Recipe extends BaseEntity {
   name: string;              // 菜品名称
-  image_data: string | null;// 菜品图片（base64 dataURL，压缩后）
+  image_data: string | null;// 菜品图片（Supabase Storage 公开 URL；旧数据可能为 base64 dataURL，<img> 均可直接渲染）
   ingredients: Ingredient[]; // 食材清单
   steps: RecipeStep[];       // 制作步骤（数组顺序即步骤顺序）
 }

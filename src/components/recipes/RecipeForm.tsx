@@ -1,14 +1,16 @@
 /**
  * 菜谱新增/编辑表单
- * 字段：菜品名称、图片（本地选择+压缩转 base64）、食材（多条可增删）、步骤（多条可排序）
+ * 字段：菜品名称、图片（本地选择+压缩后直传 Supabase Storage）、食材（多条可增删）、步骤（多条可排序）
  *
- * 图片直接以 base64 dataURL 存入数据库：
- *  - 离线缓存时图片仍可见
- *  - 不依赖后端 /api/files/upload（CloudStudio 临时版也能正常使用）
+ * 图片改为「对象存储外链」方案：
+ *  - 浏览器把压缩后的图片二进制直接上传到 Supabase Storage（recipe-images 桶）
+ *  - 数据库 recipes.image_data 只存一个公开 URL 字符串
+ *  - 上传更快（不再把巨大 base64 塞进数据库行），也不吃数据库行额度
  */
 import { useState, useEffect } from 'react';
 import { supabase, getCurrentUserId } from '@/lib/supabase';
 import { putCachedRecipe } from '@/lib/recipeCache';
+import { uploadRecipeImage } from '@/lib/recipeStorage';
 import { useToast } from '@/hooks/useToast';
 import { compressImage, validateImageMagicNumber, generateUUID } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
@@ -36,6 +38,7 @@ interface StepDraft {
 export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormProps) {
   const [name, setName] = useState('');
   const [imageData, setImageData] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // 压缩后本地预览（object URL），上传完成后让位给最终 URL
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [steps, setSteps] = useState<StepDraft[]>([]);
   const [saving, setSaving] = useState(false);
@@ -49,6 +52,7 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
     if (editRecipe) {
       setName(editRecipe.name);
       setImageData(editRecipe.image_data || null);
+      setPreviewUrl(null);
       setIngredients(
         editRecipe.ingredients?.length
           ? editRecipe.ingredients.map((i) => ({ ...i }))
@@ -62,13 +66,14 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
     } else {
       setName('');
       setImageData(null);
+      setPreviewUrl(null);
       setIngredients([{ name: '', amount: '' }]);
       setSteps([{ id: generateUUID(), description: '' }]);
     }
     setErrors({});
   }, [open, editRecipe]);
 
-  // ============ 图片选择 + 压缩 + base64 ============
+  // ============ 图片选择 + 压缩 + 直传 Storage ============
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -81,10 +86,31 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
       }
       setImgLoading(true);
       const blob = await compressImage(file);
-      const dataUrl = await blobToDataURL(blob);
-      setImageData(dataUrl);
+
+      // 本地即时预览（object URL，无需等网络）
+      const objUrl = URL.createObjectURL(blob);
+      setPreviewUrl(objUrl);
+
+      // 直传 Supabase Storage，拿回公开 URL
+      const userId = await getCurrentUserId();
+      if (!userId) {
+        toast.error('请先登录');
+        URL.revokeObjectURL(objUrl);
+        setPreviewUrl(null);
+        return;
+      }
+      const url = await uploadRecipeImage(blob, file.type, userId);
+      setImageData(url);
+      // 上传完成，用最终 URL 替换本地预览
+      URL.revokeObjectURL(objUrl);
+      setPreviewUrl(null);
     } catch (err: any) {
-      toast.error(err.message || '图片处理失败');
+      // 上传失败：清掉预览，避免误导（保存时不会带图）
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
+      toast.error(err?.message || '图片上传失败');
     } finally {
       setImgLoading(false);
     }
@@ -220,8 +246,8 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
             <div className="w-20 h-20 rounded-xl overflow-hidden bg-forest/5 border border-forest/15 flex items-center justify-center text-2xl flex-shrink-0">
               {imgLoading ? (
                 <span className="w-5 h-5 border-2 border-forest border-t-transparent rounded-full animate-spin" />
-              ) : imageData ? (
-                <img src={imageData} className="w-full h-full object-cover" alt="预览" />
+              ) : (imageData || previewUrl) ? (
+                <img src={imageData || previewUrl || ''} className="w-full h-full object-cover" alt="预览" />
               ) : (
                 '🍲'
               )}
@@ -233,9 +259,13 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
                   {imageData ? '重新选择' : '选择图片'}
                 </span>
               </label>
-              {imageData && (
+              {(imageData || previewUrl) && (
                 <button
-                  onClick={() => setImageData(null)}
+                  onClick={() => {
+                    if (previewUrl) URL.revokeObjectURL(previewUrl);
+                    setImageData(null);
+                    setPreviewUrl(null);
+                  }}
                   className="text-xs text-accent-red hover:underline self-start"
                 >
                   移除图片
@@ -243,7 +273,7 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
               )}
             </div>
           </div>
-          <p className="text-xs text-secondary mt-1">图片会自动压缩后保存，仅本地使用，离线也能查看</p>
+          <p className="text-xs text-secondary mt-1">图片自动压缩后上传到云存储，数据库只存链接，上传更快、不占额度</p>
         </div>
 
         {/* 食材清单 */}
@@ -335,14 +365,4 @@ export function RecipeForm({ open, onClose, onSaved, editRecipe }: RecipeFormPro
       </div>
     </Modal>
   );
-}
-
-// ============ 工具：Blob → dataURL ============
-function blobToDataURL(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('图片读取失败'));
-    reader.readAsDataURL(blob);
-  });
 }
