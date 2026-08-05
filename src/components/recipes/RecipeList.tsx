@@ -28,7 +28,20 @@ export function RecipeList({ onOpen, onEdit }: RecipeListProps) {
 
   // ============ 数据加载（Supabase 优先 + 本地缓存兜底） ============
   const loadRecipes = useCallback(async () => {
-    setLoading(true);
+    let hadCache = false;
+    // 1. 先用本地缓存瞬间渲染，避免等海外网络转圈
+    try {
+      const cached = await getCachedRecipes();
+      if (cached.length > 0) {
+        hadCache = true;
+        setRecipes(cached);
+        setLoading(false); // 立刻显示，不再 spinner
+      }
+    } catch (cacheErr) {
+      console.warn('[RecipeList] 读取本地缓存失败:', cacheErr);
+    }
+
+    // 2. 后台去 Supabase 拉最新数据
     try {
       const userId = await getCurrentUserId();
       if (!userId) return;
@@ -53,17 +66,8 @@ export function RecipeList({ onOpen, onEdit }: RecipeListProps) {
         }
       } catch (dbErr) {
         console.error('[RecipeList] Supabase 读取失败:', dbErr);
-        // Supabase 读取失败 → 回退本地缓存
-        try {
-          const cached = await getCachedRecipes();
-          if (cached.length > 0) {
-            setRecipes(cached);
-            toast.info('离线模式：显示本地缓存的菜谱');
-          } else {
-            toast.error('加载失败，请检查网络');
-          }
-        } catch (cacheErr) {
-          console.error('[RecipeList] 本地缓存也读取失败:', cacheErr);
+        // 仅当本地也无缓存时才提示错误，否则保留已显示的缓存数据
+        if (!hadCache) {
           toast.error('加载失败，请检查网络');
         }
       }
