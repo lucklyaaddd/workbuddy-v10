@@ -192,3 +192,18 @@ export interface BarkPushParams {
   sound?: string;    // 推送铃声
   level?: 'active' | 'timeSensitive' | 'passive'; // iOS 通知级别
 }
+
+// ============ 倒数日表 countdowns ============
+/** 倒数模式 */
+export type CountdownMode = 'since' | 'until' | 'birthday';
+/** 类型 */
+export type CountdownKind = 'custom' | 'birthday';
+
+/** 倒数日记录 */
+export interface Countdown extends BaseEntity {
+  title: string;             // 显示名称（如「在一起」、「下一次生日」）
+  target_date: string;       // 目标日期 YYYY-MM-DD
+  mode: CountdownMode;       // since(已过去) | until(还剩) | birthday(每年循环)
+  kind: CountdownKind;       // custom | birthday
+  color: string | null;      // 可选主题色（hex）
+}

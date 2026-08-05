@@ -15,6 +15,7 @@ const routeNames: Record<string, string> = {
   '/capsule/memos': '备忘录',
   '/reminders': '智能提醒中心',
   '/recipes': '私厨菜谱',
+  '/countdowns': '倒数日',
   '/settings': '设置',
 };
 

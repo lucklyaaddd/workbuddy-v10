@@ -309,3 +309,31 @@ export function PixelRecipe({ size = DEFAULT_SIZE, color = '#C4A882', className 
     </svg>
   );
 }
+
+/**
+ * 像素日历（倒数日）
+ */
+export function PixelCountdown({ size = DEFAULT_SIZE, color = '#C4A882', className = '', style }: PixelIconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className={className} style={style} xmlns="http://www.w3.org/2000/svg" shapeRendering="crispEdges">
+      {/* 顶部装订环 */}
+      <rect x="4" y="1" width="1" height="2" fill="#9B7D5A" />
+      <rect x="11" y="1" width="1" height="2" fill="#9B7D5A" />
+      {/* 日历头部 */}
+      <rect x="2" y="3" width="12" height="2" fill={color} />
+      <rect x="2" y="3" width="12" height="1" fill="#9B7D5A" />
+      {/* 日历体 */}
+      <rect x="2" y="5" width="12" height="9" fill="#FDF8EC" />
+      <rect x="2" y="5" width="1" height="9" fill={color} />
+      <rect x="13" y="5" width="1" height="9" fill={color} />
+      {/* 网格线 */}
+      <rect x="6" y="5" width="1" height="9" fill="#C4A882" opacity="0.4" />
+      <rect x="10" y="5" width="1" height="9" fill="#C4A882" opacity="0.4" />
+      <rect x="2" y="8" width="12" height="1" fill="#C4A882" opacity="0.4" />
+      <rect x="2" y="11" width="12" height="1" fill="#C4A882" opacity="0.4" />
+      {/* 中心标记（森系绿，示意「天数」） */}
+      <rect x="7" y="6" width="2" height="1" fill="#5A7A4A" />
+      <rect x="7" y="9" width="2" height="1" fill="#5A7A4A" />
+    </svg>
+  );
+}

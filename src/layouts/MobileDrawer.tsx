@@ -12,6 +12,7 @@ import {
   PixelClock,
   PixelGear,
   PixelRecipe,
+  PixelCountdown,
 } from '@/components/pixel/PixelIcons';
 import { DottedPattern, PixelGrass, PixelDogLine, LeafTexture } from '@/components/pixel/Decorations';
 
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { to: '/capsule', label: '时光胶囊', icon: PixelHeart },
   { to: '/reminders', label: '智能提醒中心', icon: PixelClock },
   { to: '/recipes', label: '私厨菜谱', icon: PixelRecipe },
+  { to: '/countdowns', label: '倒数日', icon: PixelCountdown },
   { to: '/settings', label: '设置', icon: PixelGear },
 ];
 

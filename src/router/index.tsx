@@ -17,6 +17,7 @@ const TimeCapsule = lazy(() => import('@/pages/TimeCapsule'));
 const Reminders = lazy(() => import('@/pages/Reminders'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Recipes = lazy(() => import('@/pages/Recipes'));
+const Countdowns = lazy(() => import('@/pages/Countdowns'));
 
 // ============ 懒加载包裹组件 ============
 /**
@@ -123,6 +124,15 @@ const router = createBrowserRouter([
         element: (
           <LazyLoad>
             <Recipes />
+          </LazyLoad>
+        ),
+      },
+      // 倒数日
+      {
+        path: 'countdowns',
+        element: (
+          <LazyLoad>
+            <Countdowns />
           </LazyLoad>
         ),
       },
