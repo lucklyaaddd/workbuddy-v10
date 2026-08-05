@@ -29,43 +29,56 @@ export function RecipeList({ onOpen, onEdit }: RecipeListProps) {
   // ============ 数据加载（Supabase 优先 + 本地缓存兜底） ============
   const loadRecipes = useCallback(async () => {
     setLoading(true);
-    const userId = await getCurrentUserId();
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-
     try {
-      const { data, error } = await supabase
-        .from('recipes')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
+      const userId = await getCurrentUserId();
+      if (!userId) return;
 
-      if (error) throw error;
+      try {
+        const { data, error } = await supabase
+          .from('recipes')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: false });
 
-      const list = (data || []) as Recipe[];
-      setRecipes(list);
-      // 成功后将数据写入本地缓存，供离线时兜底
-      await cacheRecipes(list);
-    } catch (e) {
-      // Supabase 读取失败 → 回退本地缓存
-      const cached = await getCachedRecipes();
-      if (cached.length > 0) {
-        setRecipes(cached);
-        toast.info('离线模式：显示本地缓存的菜谱');
-      } else {
-        toast.error('加载失败，请检查网络');
+        if (error) throw error;
+
+        const list = (data || []) as Recipe[];
+        setRecipes(list);
+        // 成功后将数据写入本地缓存，供离线时兜底
+        try {
+          await cacheRecipes(list);
+        } catch (cacheErr) {
+          console.warn('[RecipeList] 写入本地缓存失败:', cacheErr);
+        }
+      } catch (dbErr) {
+        console.error('[RecipeList] Supabase 读取失败:', dbErr);
+        // Supabase 读取失败 → 回退本地缓存
+        try {
+          const cached = await getCachedRecipes();
+          if (cached.length > 0) {
+            setRecipes(cached);
+            toast.info('离线模式：显示本地缓存的菜谱');
+          } else {
+            toast.error('加载失败，请检查网络');
+          }
+        } catch (cacheErr) {
+          console.error('[RecipeList] 本地缓存也读取失败:', cacheErr);
+          toast.error('加载失败，请检查网络');
+        }
       }
+    } catch (e) {
+      console.error('[RecipeList] 加载异常:', e);
     } finally {
+      // 关键：无论成功/失败/异常，都必须关闭 loading
       setLoading(false);
     }
-  }, [toast]);
+  }, []); // 故意空依赖：toast 引用每次 render 都新，放进依赖会导致死循环
 
   useEffect(() => {
     loadRecipes();
-  }, [loadRecipes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在 mount 时加载一次，避免 effect 反复触发
 
   if (loading) {
     return <Loading text="加载菜谱中..." />;
