@@ -1,0 +1,57 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "@vercel/node@20"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/todo-timeout",
+      "schedule": "30 16 * * *"
+    },
+    {
+      "path": "/api/cron/todo-remind",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/reminder-poll",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/backup-remind",
+      "schedule": "0 0 1 * *"
+    },
+    {
+      "path": "/api/cron/lunar-refresh",
+      "schedule": "0 17 31 12 *"
+    },
+    {
+      "path": "/api/cron/cleanup-recycle",
+      "schedule": "0 17 * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    }
+  ]
+}

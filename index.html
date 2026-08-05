@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- iOS PWA 配置 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="WorkBuddy" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <!-- 主题色 -->
+    <meta name="theme-color" content="#1A3C2A" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#FDF8EC" media="(prefers-color-scheme: light)" />
+    <!-- 安全策略 CSP -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://api.day.app; connect-src 'self' https://*.supabase.co https://api.day.app; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" />
+    <!-- 像素字体 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+    <title>WorkBuddy 个人工作台</title>
+    <!-- 启动页样式（PWA 加载时显示） -->
+    <style>
+      #splash-screen {
+        position: fixed;
+        inset: 0;
+        background: #FDF8EC;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.3s ease;
+      }
+      #splash-screen.hidden { opacity: 0; pointer-events: none; }
+      .splash-pixel-apple {
+        font-size: 48px;
+        margin-bottom: 16px;
+        animation: bounceGentle 2s ease-in-out infinite;
+      }
+      .splash-tagline {
+        color: #5A7A4A;
+        font-size: 14px;
+        margin-top: 12px;
+        font-weight: 500;
+      }
+      @keyframes bounceGentle {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 启动页/加载页：像素苹果 + 草地 + 标语 -->
+    <div id="splash-screen">
+      <div class="splash-pixel-apple">🍎</div>
+      <div style="font-size: 24px;">🐶</div>
+      <div class="splash-tagline">🌿 天地通，年月通，日事通，万事皆成</div>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

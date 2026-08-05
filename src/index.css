@@ -1,0 +1,242 @@
+/**
+ * 全局 CSS 样式
+ * TailwindCSS 基础 + 像素森系自定义样式 + 深色模式 + iOS 安全区适配
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============ 全局变量 ============ */
+:root {
+  /* 浅色模式色彩 */
+  --bg-primary: #FDF8EC;
+  --bg-secondary: #F5EDD6;
+  --bg-card: rgba(255, 255, 255, 0.7);
+  --text-primary: #3D2C1B;
+  --text-secondary: #6B5D4F;
+  --border-color: #E0D5C0;
+  --nav-bg: #1A3C2A;
+  --nav-text: #FDF8EC;
+  --accent: #5A7A4A;
+  --accent-light: #7DBF8A;
+
+  /* iOS 安全区变量 */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+/* 深色模式色彩 */
+.dark {
+  --bg-primary: #1A2A1A;
+  --bg-secondary: #243524;
+  --bg-card: rgba(45, 65, 45, 0.6);
+  --text-primary: #FDF8EC;
+  --text-secondary: #A8BBA0;
+  --border-color: #2D5A3D;
+  --nav-bg: #0F1F0F;
+  --nav-text: #FDF8EC;
+  --accent: #7DBF8A;
+  --accent-light: #9DD5A8;
+}
+
+/* ============ 基础样式 ============ */
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent; /* 移除点击高亮 */
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  /* 禁止水平滚动 */
+  overflow-x: hidden;
+  /* iOS 省电：减少重绘 */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* iOS 安全区适配 */
+body {
+  padding-top: var(--safe-area-top);
+  padding-bottom: var(--safe-area-bottom);
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
+}
+
+/* ============ 组件样式 ============ */
+@layer components {
+  /* 毛玻璃卡片 */
+  .glass-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  }
+
+  .glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(90, 122, 74, 0.12);
+  }
+
+  /* 导航栏项 */
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    color: var(--nav-text);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .nav-item:hover {
+    background: rgba(125, 191, 138, 0.15);
+  }
+
+  .nav-item.active {
+    background: rgba(125, 191, 138, 0.25);
+    border-left: 3px solid #7DBF8A;
+  }
+
+  /* 像素风格按钮 */
+  .pixel-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 2px solid transparent;
+    user-select: none;
+  }
+
+  .pixel-btn:active {
+    transform: scale(0.97);
+  }
+
+  .pixel-btn-primary {
+    background: #5A7A4A;
+    color: #FDF8EC;
+    border-color: #3D5A2D;
+  }
+
+  .pixel-btn-primary:hover {
+    background: #6B8A5B;
+  }
+
+  .pixel-btn-secondary {
+    background: transparent;
+    color: #5A7A4A;
+    border-color: #5A7A4A;
+  }
+
+  .pixel-btn-danger {
+    background: #D64550;
+    color: #FDF8EC;
+  }
+
+  /* 输入框 */
+  .pixel-input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .pixel-input:focus {
+    border-color: #7DBF8A;
+  }
+
+  /* 空状态容器 */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+  }
+
+  /* 状态标签 */
+  .status-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  /* 滚动条美化 */
+  .custom-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scroll::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+  }
+}
+
+/* ============ 动画 ============ */
+@layer utilities {
+  /* 硬件加速 */
+  .gpu-accelerated {
+    transform: translateZ(0);
+    will-change: transform, opacity;
+  }
+
+  /* 虚拟列表项 */
+  .virtual-item {
+    contain: layout style paint;
+  }
+}
+
+/* ============ 移动端适配 ============ */
+@media (max-width: 768px) {
+  /* 移动端隐藏滚动条 */
+  ::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 移动端按钮增大触摸区域 */
+  button, a {
+    min-height: 44px;
+  }
+
+  /* 防止 iOS 双击缩放 */
+  * {
+    touch-action: manipulation;
+  }
+}
+
+/* ============ 像素装饰元素 ============ */
+.pixel-decoration {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.15;
+}
+
+/* 波点背景 */
+.dotted-bg {
+  background-image: radial-gradient(circle, #C4A882 1px, transparent 1px);
+  background-size: 20px 20px;
+}

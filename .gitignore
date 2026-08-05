@@ -1,0 +1,29 @@
+# 依赖目录
+node_modules
+# 构建产物
+dist
+dist-ssr
+# 环境变量（包含敏感密钥，禁止提交）
+.env
+.env.local
+.env.*.local
+# Vercel 部署缓存
+.vercel
+# IDE 配置
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# 系统文件
+.DS_Store
+Thumbs.db
+# 日志
+*.log
+npm-debug.log*
+# PWA 生成文件
+dev-dist
+# TypeScript 缓存
+*.tsbuildinfo
