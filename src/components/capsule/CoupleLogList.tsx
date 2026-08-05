@@ -16,6 +16,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ImageViewer } from '@/components/common/ImageViewer';
+import { TogetherDateForm } from '@/components/capsule/TogetherDateForm';
 import type { CoupleLog } from '@/types';
 
 // ============ 常量定义 ============
@@ -55,6 +56,9 @@ export function CoupleLogList() {
   const [moodFilter, setMoodFilter] = useState('');
   const [starredOnly, setStarredOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CoupleLog | null>(null);
+  // "在一起纪念日"：来自 user_preferences.together_since（YYYY-MM-DD）；null = 未设置
+  const [togetherSince, setTogetherSince] = useState<string | null>(null);
+  const [togetherFormOpen, setTogetherFormOpen] = useState(false);
   // 图片预览
   const [previewImages, setPreviewImages] = useState<string[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -62,6 +66,23 @@ export function CoupleLogList() {
   const toast = useToast();
 
   // ============ 数据加载（本地优先） ============
+
+  const loadTogetherSince = useCallback(async () => {
+    try {
+      const userId = await getCurrentUserId();
+      if (!userId) return;
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('together_since')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (error) throw error;
+      setTogetherSince(data?.together_since ?? null);
+    } catch (e) {
+      console.warn('[CoupleLogList] 读取在一起日期失败:', e);
+      // 失败时保持 null，不显示卡片（避免误用日志日期算出 0 天）
+    }
+  }, []);
 
   const loadLogs = useCallback(async () => {
     const userId = await getCurrentUserId();
@@ -103,6 +124,7 @@ export function CoupleLogList() {
 
   useEffect(() => {
     loadLogs();
+    loadTogetherSince();
     // 仅挂载加载一次；心情/收藏均为前端筛选
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -127,15 +149,16 @@ export function CoupleLogList() {
   const hasMore = filtered.length > visibleCount;
 
   // ============ 在一起天数 ============
+  // 数据源：用户偏好（user_preferences.together_since）。仅在用户主动设置后才显示——
+  // 不要再用"最早的日志日期"代替，避免"今天记第一条就显示 0 天"。
 
   const togetherDays = useMemo(() => {
-    if (filtered.length === 0) return null;
-    // 从最早的日志日期开始计算
-    const dates = filtered.map((l) => new Date(l.log_date).getTime());
-    const earliest = Math.min(...dates);
-    const now = Date.now();
-    return Math.floor((now - earliest) / (1000 * 60 * 60 * 24));
-  }, [filtered]);
+    if (!togetherSince) return null;
+    const start = new Date(togetherSince);
+    if (isNaN(start.getTime())) return null;
+    const now = new Date();
+    return Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  }, [togetherSince]);
 
   // ============ 日历标记日期 ============
 
@@ -196,13 +219,29 @@ export function CoupleLogList() {
 
   return (
     <div className="space-y-4">
-      {/* 在一起天数 */}
-      {togetherDays !== null && (
-        <Card padding="md" className="text-center bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/20 dark:to-pink-950/20 border-red-200 dark:border-red-800">
-          <p className="text-sm text-red-500 dark:text-red-400 font-medium">
-            💞 已经在一起 {togetherDays} 天啦
-          </p>
+      {/* 在一起天数 / 设置入口 */}
+      {togetherDays !== null ? (
+        <Card padding="md" className="bg-gradient-to-r from-red-50 to-pink-50 dark:from-red-950/20 dark:to-pink-950/20 border-red-200 dark:border-red-800">
+          <div className="flex items-center justify-between gap-3">
+            <p className="flex-1 text-sm text-red-500 dark:text-red-400 font-medium">
+              💞 已经在一起 {togetherDays} 天啦
+            </p>
+            <button
+              onClick={() => setTogetherFormOpen(true)}
+              className="px-2.5 py-1 rounded-md text-xs text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+              aria-label="修改在一起纪念日"
+            >
+              ✏️ 改
+            </button>
+          </div>
         </Card>
+      ) : (
+        <button
+          onClick={() => setTogetherFormOpen(true)}
+          className="w-full px-4 py-3 rounded-lg border-2 border-dashed border-red-300 dark:border-red-700 text-sm text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+        >
+          📅 设置在一起纪念日（顶部会显示"已经在一起 N 天啦"）
+        </button>
       )}
 
       {/* 心情标签筛选 */}
@@ -351,6 +390,14 @@ export function CoupleLogList() {
         initialIndex={previewIndex}
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
+      />
+
+      {/* 设置/修改 在一起纪念日 */}
+      <TogetherDateForm
+        open={togetherFormOpen}
+        currentValue={togetherSince}
+        onClose={() => setTogetherFormOpen(false)}
+        onSaved={(val) => setTogetherSince(val)}
       />
     </div>
   );
