@@ -67,7 +67,8 @@ export function BarkConfig() {
   useEffect(() => {
     loadDevices();
     loadPushEnabled();
-  }, [loadDevices, loadPushEnabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在 mount 时加载一次，避免 useToast 引用变化触发死循环
 
   // ============ 保存绑定 ============
   const handleSave = async () => {

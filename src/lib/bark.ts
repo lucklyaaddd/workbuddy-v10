@@ -1,10 +1,12 @@
 /**
  * Bark 推送前端工具
- * 安全规范：前端禁止直接调用 Bark API，所有推送请求经由 Vercel 函数中转
- * 前端仅负责将推送参数发送到后端 API
+ * 注意：推送主流程依赖 Vercel Serverless Functions，仅 Vercel 完整版可用
+ * 列表/删除改为直连 Supabase（用 RLS 严格隔离数据），兼容 CloudStudio 镜像
+ *
+ * 安全规范：endpoint 字段是加密的，前端不调用解密；UI 上用 id 脱敏展示
  */
 import type { BarkPushParams } from '@/types';
-import { getAccessToken } from './supabase';
+import { supabase, getAccessToken, getCurrentUserId } from './supabase';
 
 /**
  * 发送推送请求（通过后端中转）
@@ -43,6 +45,9 @@ export async function sendPushNotification(params: BarkPushParams): Promise<{ su
  * @param barkUrl 完整 Bark 推送 URL
  * @param deviceName 设备名称
  * @returns 保存结果
+ *
+ * 注意：此接口依赖 Vercel Serverless Function（加密密钥仅存在于后端）。
+ * 在 CloudStudio 镜像下会失败，需使用 Vercel 完整版。
  */
 export async function saveBarkSubscription(barkUrl: string, deviceName: string): Promise<{ success: boolean; error?: string }> {
   const token = await getAccessToken();
@@ -77,40 +82,58 @@ export async function saveBarkSubscription(barkUrl: string, deviceName: string):
 }
 
 /**
- * 获取已绑定的设备列表
- * @returns 设备列表（endpoint 已脱敏）
+ * 获取已绑定的设备列表（直连 Supabase）
+ * 走 supabase-js 自身的 RLS（policy: select_own），自动过滤只查当前用户
+ * endpoint 字段是加密的，前端不解密；用 id 填充 endpoint 字段保持 UI 兼容
+ * @returns 设备列表（兼容 BoundDevice 类型的 id/device_name/endpoint）
  */
 export async function getSubscriptions(): Promise<any[]> {
-  const token = await getAccessToken();
-  if (!token) return [];
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
 
   try {
-    const resp = await fetch('/api/bark/subscriptions', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const result = await resp.json();
-    return result.data || [];
-  } catch {
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .select('id, type, device_name, created_at')
+      .eq('user_id', userId)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // endpoint 字段填充 id（让现有 maskEndpoint UI 仍能展示，
+    // 同时密码安全：前端永远不会拿到明文 Bark URL）
+    return (data || []).map((row) => ({
+      id: row.id,
+      type: row.type,
+      device_name: row.device_name,
+      created_at: row.created_at,
+      endpoint: row.id, // 兼容 UI，前端不可解密原 URL
+    }));
+  } catch (err) {
+    console.error('[Bark] getSubscriptions 失败:', err);
     return [];
   }
 }
 
 /**
- * 删除推送订阅
- * @param subscriptionId 订阅ID
+ * 删除推送订阅（软删除，直连 Supabase）
+ * @param subscriptionId 订阅 ID
  */
 export async function deleteSubscription(subscriptionId: string): Promise<{ success: boolean; error?: string }> {
-  const token = await getAccessToken();
-  if (!token) return { success: false, error: '未登录' };
+  const userId = await getCurrentUserId();
+  if (!userId) return { success: false, error: '未登录' };
 
   try {
-    const resp = await fetch(`/api/bark/subscriptions?id=${subscriptionId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const result = await resp.json();
-    return { success: result.success, error: result.error };
+    const { error } = await supabase
+      .from('push_subscriptions')
+      .update({ is_deleted: true, updated_at: new Date().toISOString() })
+      .eq('id', subscriptionId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    return { success: false, error: err.message || '删除失败' };
   }
 }
